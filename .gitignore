@@ -1,0 +1,53 @@
+venv/
+__pycache__/
+*.pyc
+.env
+
+screenshots/*.png
+traces/*.zip
+videos/*.webm
+logs/*.log
+reports/report_*.html
+allure-results/
+allure-report/
+
+.pytest_cache/
+.DS_Store
+
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual environment
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Pytest
+.pytest_cache/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Generated files
+screenshots/
+videos/
+traces/
+reports/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.pem

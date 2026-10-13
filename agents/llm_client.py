@@ -18,6 +18,8 @@ file that needs to change — every agent just calls `ask_json()` or `ask_text()
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
+from pydantic import BaseModel, ValidationError
+from openai import BadRequestError
 
 load_dotenv()
 
@@ -28,7 +30,7 @@ if PROVIDER == "groq":
         api_key=os.getenv("GROQ_API_KEY"),
         base_url="https://api.groq.com/openai/v1",
     )
-    MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 elif PROVIDER == "openai":
     _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -36,19 +38,127 @@ else:
     raise ValueError(f"Unknown LLM_PROVIDER '{PROVIDER}'. Use 'groq' or 'openai'.")
 
 
-def ask_json(system_prompt: str, user_prompt: str) -> dict:
-    """Call the model and force a JSON object back. Raises if parsing fails."""
-    response = _client.chat.completions.create(
-        model=MODEL,
-        temperature=0.2,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
-    raw = response.choices[0].message.content
-    return _parse_json(raw)
+
+import json
+from openai import BadRequestError
+
+
+class LLMResponseError(Exception):
+    """Raised when an LLM response is malformed or fails validation."""
+
+
+def ask_json(
+    system_prompt: str,
+    user_prompt: str,
+    response_model: type[BaseModel],
+) -> BaseModel:
+    """Request JSON, validate its schema, and retry invalid output."""
+
+    import json
+
+    max_attempts = 3
+    current_prompt = user_prompt
+    last_error = None
+
+    for attempt in range(max_attempts):
+        try:
+            response = _client.chat.completions.create(
+                model=MODEL,
+                temperature=0.2,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": current_prompt},
+                ],
+            )
+
+            raw = response.choices[0].message.content
+
+            if not raw or not raw.strip():
+                raise LLMResponseError("LLM returned an empty response.")
+
+            try:
+                data = _parse_json(raw)
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise LLMResponseError(
+                    "LLM returned malformed JSON."
+                ) from exc
+
+            try:
+                return response_model.model_validate(data)
+            except ValidationError as exc:
+                details = exc.errors(include_input=False)
+                raise LLMResponseError(
+                    f"LLM output failed {response_model.__name__} "
+                    f"validation: {details}"
+                ) from exc
+
+        except LLMResponseError as exc:
+            last_error = exc
+
+            if attempt == max_attempts - 1:
+                break
+
+            current_prompt = (
+                f"{user_prompt}\n\n"
+                f"Your previous response failed validation: {exc}\n"
+                f"Return a corrected JSON object matching this schema: "
+                f"{response_model.model_json_schema()}\n"
+                "Include all required fields, use correct types, and "
+                "do not include unexpected fields."
+            )
+
+        except BadRequestError as exc:
+            # Groq can reject malformed JSON before returning a response.
+            body = exc.body if isinstance(exc.body, dict) else {}
+            details = body.get("error", body)
+            error_code = (
+                details.get("code")
+                if isinstance(details, dict)
+                else None
+            )
+
+            if error_code != "json_validate_failed":
+                raise LLMResponseError(
+                    f"LLM provider rejected the request: {exc}"
+                ) from exc
+
+            last_error = exc
+
+            if attempt == max_attempts - 1:
+                break
+
+            failed_generation = (
+                details.get("failed_generation", "")
+                if isinstance(details, dict)
+                else ""
+            )
+
+            current_prompt = (
+                f"{user_prompt}\n\n"
+                "The previous output was rejected as invalid JSON. "
+                "Return one complete JSON object matching the requested "
+                "schema. Ensure every array item is a complete object "
+                "with correct braces, commas, fields, and types."
+            )
+
+            if failed_generation:
+                current_prompt += (
+                    "\nPrevious invalid output:\n" + failed_generation
+                )
+
+        except Exception as exc:
+            # Network errors, authentication errors, and other unexpected
+            # provider failures must not be misclassified as bad JSON.
+            raise LLMResponseError(
+                f"LLM request failed: {type(exc).__name__}: {exc}"
+            ) from exc
+
+    raise LLMResponseError(
+        f"Could not obtain valid {response_model.__name__} output "
+        f"after {max_attempts} attempts."
+    ) from last_error
+
 
 
 def ask_text(system_prompt: str, user_prompt: str) -> str:

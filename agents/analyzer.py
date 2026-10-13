@@ -28,22 +28,42 @@ waiting for a selector, say so explicitly. Return ONLY the JSON object.
 """
 
 
+
 def analyze_failure(plan: TestPlan, result: ExecutionResult) -> BugReport:
-    assert not result.passed, "analyze_failure should only be called on a failed result"
+    if result.passed:
+        raise ValueError(
+            "analyze_failure requires a failed ExecutionResult."
+        )
+
+    if not result.error_message and not result.error_traceback:
+        raise ValueError(
+            "Cannot analyze failure without an error message or traceback."
+        )
 
     user_prompt = f"""
 TEST PLAN:
 {plan.model_dump_json(indent=2)}
 
 ERROR MESSAGE:
-{result.error_message}
+{result.error_message or "Not provided"}
 
 TRACEBACK:
-{result.error_traceback}
+{result.error_traceback or "Not provided"}
 
 CONSOLE LOGS:
 {result.console_logs}
+
+SCREENSHOT PATH:
+{result.screenshot_path or "Not available"}
 """
-    data = ask_json(SYSTEM_PROMPT, user_prompt)
-    data["evidence_screenshot"] = result.screenshot_path
-    return BugReport(**data)
+
+    report = ask_json(
+        SYSTEM_PROMPT,
+        user_prompt,
+        response_model=BugReport,
+    )
+
+    # Evidence comes from the actual execution result, not the LLM.
+    return report.model_copy(
+        update={"evidence_screenshot": result.screenshot_path}
+    )

@@ -41,7 +41,12 @@ test-results/
 screenshots/
 videos/
 traces/
-reports/
+
+# Ignore generated report files but keep report source code
+reports/*
+!reports/__init__.py
+!reports/report_builder.py
+!reports/report_template.html
 logs/
 
 # OS

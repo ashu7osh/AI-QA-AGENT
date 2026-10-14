@@ -1,0 +1,109 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI QA Agent Report - {{ result.test_title }}</title>
+<style>
+body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#f5f6fa; margin:0; padding:2rem; color:#1c1e21; }
+.card { background:#fff; border-radius:10px; padding:1.5rem 2rem; max-width:900px; margin:0 auto 1.5rem; box-shadow:0 1px 4px rgba(0,0,0,0.08); }
+.status { display:inline-block; padding:.25rem .75rem; border-radius:999px; font-weight:600; font-size:.85rem; }
+.pass { background:#e6f7ec; color:#1a7f37; }
+.fail { background:#fdecea; color:#c0392b; }
+h1 { font-size:1.4rem; margin-top:0; }
+h2 { font-size:1.05rem; color:#555; border-bottom:1px solid #eee; padding-bottom:.4rem; }
+pre { background:#0d1117; color:#c9d1d9; padding:1rem; border-radius:8px; overflow-x:auto; font-size:.85rem; white-space:pre-wrap; }
+.log-line { font-family:monospace; font-size:.85rem; color:#444; }
+.sev-High, .sev-Critical { color:#c0392b; font-weight:700; }
+.sev-Medium { color:#b8860b; font-weight:700; }
+.sev-Low { color:#1a7f37; font-weight:700; }
+img { max-width:100%; border-radius:8px; border:1px solid #ddd; margin-top:.5rem; }
+table { width:100%; border-collapse:collapse; }
+td { padding:.4rem 0; vertical-align:top; }
+td.label { color:#777; width:160px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>{{ result.test_title }}
+    <span class="status {{ 'pass' if result.passed else 'fail' }}">
+      {{ 'PASSED' if result.passed else 'FAILED' }}
+    </span>
+  </h1>
+  <table>
+    <tr><td class="label">Duration</td><td>{{ result.duration_seconds }}s</td></tr>
+    <tr><td class="label">Generated on</td><td>{{ generated_at }}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Execution Log</h2>
+  {% for line in result.console_logs %}
+    <div class="log-line">{{ line }}</div>
+  {% else %}
+    <div class="log-line">No log lines captured.</div>
+  {% endfor %}
+</div>
+
+{% if screenshot_path %}
+<div class="card">
+  <h2>Screenshot</h2>
+  <img src="{{ screenshot_path }}" alt="Test screenshot">
+</div>
+{% endif %}
+
+{% if not result.passed and bug_report %}
+<div class="card">
+  <h2>AI-Generated Bug Report</h2>
+  <table>
+    <tr><td class="label">Title</td><td>{{ bug_report.bug_title }}</td></tr>
+    <tr><td class="label">Severity</td><td class="sev-{{ bug_report.severity }}">{{ bug_report.severity }}</td></tr>
+    <tr><td class="label">Expected</td><td>{{ bug_report.expected }}</td></tr>
+    <tr><td class="label">Actual</td><td>{{ bug_report.actual }}</td></tr>
+    <tr><td class="label">Possible Root Cause</td><td>{{ bug_report.possible_root_cause }}</td></tr>
+    <tr><td class="label">Suggested Fix</td><td>{{ bug_report.suggested_fix }}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Raw Error</h2>
+  <pre>{{ result.error_message or '' }}
+{{ result.error_traceback or '' }}</pre>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Generated Playwright Code</h2>
+  <pre>{{ generated_code }}</pre>
+</div>
+
+<div class="card">
+  <h2>Artifacts</h2>
+  <table>
+    <tr>
+      <td class="label">Trace file</td>
+      <td>
+        {% if trace_path %}
+          <a href="{{ trace_path }}">Open trace file</a>
+          (open at trace.playwright.dev)
+        {% else %}
+          N/A
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <td class="label">Video</td>
+      <td>
+        {% if video_path %}
+          <a href="{{ video_path }}">Open video</a>
+        {% else %}
+          N/A
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>

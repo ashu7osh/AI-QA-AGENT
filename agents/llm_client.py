@@ -25,18 +25,51 @@ load_dotenv()
 
 PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
 
+PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
+
 if PROVIDER == "groq":
-    _client = OpenAI(
-        api_key=os.getenv("GROQ_API_KEY"),
-        base_url="https://api.groq.com/openai/v1",
-    )
     MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 elif PROVIDER == "openai":
-    _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 else:
-    raise ValueError(f"Unknown LLM_PROVIDER '{PROVIDER}'. Use 'groq' or 'openai'.")
+    raise ValueError(
+        f"Unknown LLM_PROVIDER '{PROVIDER}'. Use 'groq' or 'openai'."
+    )
 
+_client = None
+_client_provider = None
+
+
+def get_client():
+    global _client, _client_provider
+
+    provider = os.getenv("LLM_PROVIDER", "groq").lower()
+
+    if _client is not None and _client_provider == provider:
+        return _client
+
+    if provider == "groq":
+        api_key = os.getenv("GROQ_API_KEY")
+        base_url = "https://api.groq.com/openai/v1"
+    elif provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        base_url = None
+    else:
+        raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")
+
+    if not api_key:
+        raise RuntimeError(
+            f"Missing API key for provider '{provider}'. "
+            "Configure the appropriate environment variable."
+        )
+
+    kwargs = {"api_key": api_key}
+    if base_url:
+        kwargs["base_url"] = base_url
+
+    _client = OpenAI(**kwargs)
+    _client_provider = provider
+    return _client
 
 
 import json
@@ -55,14 +88,14 @@ def ask_json(
     """Request JSON, validate its schema, and retry invalid output."""
 
     import json
-
+    client = get_client()
     max_attempts = 3
     current_prompt = user_prompt
     last_error = None
 
     for attempt in range(max_attempts):
         try:
-            response = _client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=MODEL,
                 temperature=0.2,
                 response_format={"type": "json_object"},
@@ -163,7 +196,10 @@ def ask_json(
 
 def ask_text(system_prompt: str, user_prompt: str) -> str:
     """Call the model and return plain text (used for generated code)."""
-    response = _client.chat.completions.create(
+
+    client = get_client()
+
+    response = client.chat.completions.create(
         model=MODEL,
         temperature=0.1,
         messages=[
@@ -171,8 +207,13 @@ def ask_text(system_prompt: str, user_prompt: str) -> str:
             {"role": "user", "content": user_prompt},
         ],
     )
-    return response.choices[0].message.content.strip()
 
+    content = response.choices[0].message.content
+
+    if not content or not content.strip():
+        raise LLMResponseError("LLM returned an empty response.")
+
+    return content.strip()
 
 def _parse_json(raw: str) -> dict:
     import json

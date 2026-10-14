@@ -27,11 +27,15 @@ jobs:
       - name: Install Playwright browsers
         run: playwright install --with-deps chromium
 
+      
       - name: Run hand-written POM smoke tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: pytest -m "smoke and pom" --alluredir=allure-results
-
+  
       - name: Run AI-generated pipeline tests
         env:
+          PYTHONPATH: ${{ github.workspace }}
           LLM_PROVIDER: groq
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: pytest -m ai_generated --alluredir=allure-results

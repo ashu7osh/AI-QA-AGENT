@@ -1,3 +1,4 @@
+
 name: AI QA Agent Test Suite
 
 on:
@@ -5,7 +6,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch: {}   # lets you trigger it manually from the GitHub UI
+  workflow_dispatch: {}
 
 jobs:
   test:
@@ -15,32 +16,43 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Build Docker image
+        run: docker build -t ai-qa-agent .
 
-      - name: Install dependencies
+      - name: Prepare artifact directories
         run: |
-          pip install -r requirements.txt
+          mkdir -p screenshots traces videos logs allure-results reports
 
-      - name: Install Playwright browsers
-        run: playwright install --with-deps chromium
+      - name: Run POM smoke tests in Docker
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/screenshots:/app/screenshots" \
+            -v "$GITHUB_WORKSPACE/traces:/app/traces" \
+            -v "$GITHUB_WORKSPACE/videos:/app/videos" \
+            -v "$GITHUB_WORKSPACE/logs:/app/logs" \
+            -v "$GITHUB_WORKSPACE/reports:/app/reports" \
+            -v "$GITHUB_WORKSPACE/allure-results:/app/allure-results" \
+            ai-qa-agent \
+            pytest -m "smoke and pom" --alluredir=allure-results
 
-      
-      - name: Run hand-written POM smoke tests
+      - name: Run AI-generated tests in Docker
         env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: pytest -m "smoke and pom" --alluredir=allure-results
-  
-      - name: Run AI-generated pipeline tests
-        env:
-          PYTHONPATH: ${{ github.workspace }}
           LLM_PROVIDER: groq
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: pytest -m ai_generated --alluredir=allure-results
+        run: |
+          docker run --rm \
+            -e LLM_PROVIDER \
+            -e GROQ_API_KEY \
+            -v "$GITHUB_WORKSPACE/screenshots:/app/screenshots" \
+            -v "$GITHUB_WORKSPACE/traces:/app/traces" \
+            -v "$GITHUB_WORKSPACE/videos:/app/videos" \
+            -v "$GITHUB_WORKSPACE/logs:/app/logs" \
+            -v "$GITHUB_WORKSPACE/reports:/app/reports" \
+            -v "$GITHUB_WORKSPACE/allure-results:/app/allure-results" \
+            ai-qa-agent \
+            pytest -m ai_generated --alluredir=allure-results
 
-      - name: Upload test artifacts (screenshots, traces, videos)
+      - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
